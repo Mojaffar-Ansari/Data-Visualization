@@ -1,0 +1,21 @@
+I have attached a html file as an output of visualisation.
+For running source file, rstudio is needed. Path of file needs to be changed and following packages needs to be install.
+--flexdashboard
+--highcharter
+--plotly
+--ggplot2
+--tidyverse
+--countrycode
+--crosstalk
+--treemap
+--dplyr
+--DT
+--viridisLite
+--viridis
+--ggraph
+--igraph
+--reshape2
+--heatmaply
+--RColorBrewer
+--networkD3
+--rjson

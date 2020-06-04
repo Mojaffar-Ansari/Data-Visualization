@@ -1,0 +1,292 @@
+---
+title: "Homicide Data"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    theme: bootstrap
+---
+
+``` {js}
+// Inverse color of navigation bar.
+$('.navbar-inverse').removeClass('navbar-inverse').addClass('navbar-default');
+```
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(highcharter)
+library(plotly)
+library(ggplot2)
+library(tidyverse)
+library(countrycode)
+library(crosstalk)
+library(treemap)
+library(dplyr)
+library(DT)
+library(viridisLite)
+library(viridis)
+library(ggraph)
+library(igraph)
+library(reshape2)
+library(heatmaply)
+library(RColorBrewer)
+library(networkD3)
+library(rjson)
+
+df <- read.csv('C:/Users/Rohit/Downloads/database.csv')
+df$Incident <- 1
+map <- data(usgeojson)
+```
+
+Overall Statistics
+=======================================================================
+
+Row {.tabset .tabset-fade .colored}
+-----------------------------------------------------------------------
+
+### Number of Murders Each Year
+
+```{r}
+No_of_Murder <- df %>%
+  select(Year,Incident) %>%
+  group_by(Year) %>%
+  summarise(total_murder = sum(Incident))
+plot_ly(No_of_Murder,x =~as.factor(Year), y = ~total_murder, type = 'scatter', mode ='lines+markers', size = ~total_murder*1000)%>%
+  layout(xaxis = list(title = 'Year'),yaxis= list(title = 'Murder Count'))
+```
+
+### Number of Murders by Months Every  Year
+
+```{r}
+No_of_Murder <- df %>%
+  select(Year,Month, Incident) %>%
+  group_by(Year, Month) %>%
+  summarise(total_murder = sum(Incident))
+No_of_Murder$Month <- factor(No_of_Murder$Month, levels = c('January','February','March','April','May','June','July','August','September','October','November','December'))
+plot_ly(No_of_Murder, x = ~Month, y = ~total_murder, type = 'scatter', mode = 'markers', frame = ~Year, color = ~Month, size = ~total_murder*1000)%>%
+  layout(xaxis = list(title = 'Year'),yaxis= list(title = 'Murder Count'))
+```
+
+### Number of Murders by Age
+
+```{r}
+df1 <- df
+df1$Age <- ifelse(df$Perpetrator.Age < '18' & df$Perpetrator.Sex=="Unknown",
+                                    "Minor","Major")
+No_of_Murder <- df1 %>%
+  select(Year,Age, Incident) %>%
+  group_by(Year,Age)%>%
+  summarise(total_murder = sum(Incident))
+plot_ly(No_of_Murder, x = ~as.factor(Year), y = ~total_murder, type = 'scatter', mode = 'lines+markers', split = ~Age, size = ~total_murder)%>%
+  layout(xaxis = list(title = 'Year'),yaxis= list(title = 'Murder Count'))
+```
+
+### Number of Perpetrator By Gender
+
+```{r}
+No_of_Murder <- df %>%
+  select(Year,Perpetrator.Sex, Incident) %>%
+  group_by(Year,Perpetrator.Sex)%>%
+  summarise(total_murder = sum(Incident))
+plot_ly(No_of_Murder, x = ~as.factor(Year), y = ~total_murder, type = 'scatter', mode = 'lines+markers', split = ~Perpetrator.Sex, size = ~total_murder*1000)%>%
+  layout(xaxis = list(title = 'Year'),yaxis= list(title = 'Murder Count'))
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Average number of murders per year
+
+```{r fig.height= 10}
+No_of_Murder <- df %>%
+  select(Year,Incident) %>%
+  group_by(Year) %>%
+  summarise(total_murder = sum(Incident))
+average <- round(mean(No_of_Murder$total_murder),0)
+valueBox(average, icon ="fa-user-secret", color = 'lightblue')
+```
+
+### Percent of Cases Solved
+
+```{r fig.height= 10}
+rate <- length(df$Crime.Solved[df$Crime.Solved == 'Yes'])/nrow(df)
+gauge(round(rate *100,0), min = 0, max = 100, symbol = '%', gaugeSectors(success = c(70, 100), warning = c(40, 69), danger = c(0, 39)))
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Types of Cases
+
+```{r fig.height= 0.5}
+No_of_murder <- df %>%
+  select(Crime.Type, Incident) %>%
+  group_by(Crime.Type)%>%
+  summarise(total_murder = sum(Incident))
+plot_ly(No_of_murder, labels = ~Crime.Type, values = ~total_murder, type = 'pie')
+```
+
+### Percent of Perpetrator by Gender
+
+```{r fig.height= 0.5}
+No_of_murder <- df %>%
+  select(Perpetrator.Sex, Incident) %>%
+  group_by(Perpetrator.Sex)%>%
+  summarise(total_murder = sum(Incident))
+plot_ly(No_of_murder, labels = ~Perpetrator.Sex, values = ~total_murder, type = 'pie')
+```
+
+Relationship
+=======================================================================
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Who Killed Who using weapon
+
+**Sankey Chart**
+
+```{r, fig.width= 1}
+count <- 0
+df1 <- data.frame(matrix(ncol = 3, nrow = 0))
+relation <- df%>%
+  select(Victim.Sex, Perpetrator.Sex, Weapon, Incident)%>%
+  group_by(Victim.Sex, Perpetrator.Sex, Weapon)%>%
+  summarise(total_murder = sum(Incident))
+colnames(df1) <- c('source', 'target', 'value')
+relation <- data.frame(relation)
+for(row in 1:nrow(relation)){
+  count<- count +1
+  df1[count,'source'] <- paste('victim',relation[row,'Victim.Sex'], 'killed by')
+  df1[count,'target'] <- paste('Perpetrator',relation[row,'Perpetrator.Sex'], 'using')
+  df1[count,'value'] <- relation[row,'total_murder']
+  count <- count +1
+  df1[count,'source'] <- paste('Perpetrator',relation[row,'Perpetrator.Sex'], 'using')
+  df1[count,'target'] <- as.character(relation[row,'Weapon'])
+  df1[count,'value'] <- relation[row,'total_murder']
+}
+sank <- df1%>%
+  select(source,target,value)%>%
+  group_by(source,target)%>%
+  summarise(value = sum(value))
+sank <- data.frame(sank)
+nodes <- data.frame(name=c(as.character(sank$source), as.character(sank$target)) %>% unique())
+sank$IDsource=match(sank$source, nodes$name)-1 
+sank$IDtarget=match(sank$target, nodes$name)-1
+
+ColourScal ='d3.scaleOrdinal() .range(["#FDE725FF","#B4DE2CFF","#6DCD59FF","#35B779FF","#1F9E89FF","#26828EFF","#31688EFF","#3E4A89FF","#482878FF","#440154FF"])'
+sankeyNetwork(Links = sank, Nodes = nodes,
+                     Source = "IDsource", Target = "IDtarget",
+                     Value = "value", NodeID = "name", 
+                     sinksRight=FALSE, nodeWidth=40, fontSize=14, nodePadding=20)
+```
+
+### Relationship and weapons used
+```{r}
+relation <- df %>%
+  select(Weapon, Incident, Relationship)%>%
+  group_by(Weapon, Relationship)%>%
+  summarise(total_murder = sum(Incident))
+relation <- dcast(relation, Relationship ~ Weapon)
+matr <- relation
+rownames(matr) <- matr[,1]
+matr <- matr %>%
+  dplyr::select(-Relationship)
+matr <- as.matrix(matr)
+heatmaply(matr, 
+          #dendogram = 'none',
+          Colv = NA, Rowv = NA,
+          xlab = "", ylab="",
+          main = "",
+          scale = "column",
+          margins = c(60,100,40,20),
+          grid_color = "white",
+          grid_width = 0.001,
+          titleX = FALSE,
+          hide_colorbar = TRUE,
+          branches_lwd = 0.2,
+          label_names = c('Relation','Weapon','Count'),
+          fontsize_row = 11, fontsize_col = 11,
+          labCol = colnames(matr),
+          labRow = rownames(matr),
+          heatmap_layers = theme(axis.line = element_blank()))
+```
+
+Row {data-width = 700}
+-----------------------------------------------------------------------
+### No. of Murders by Relationship.
+```{r,fig.keep='none'}
+relations <- df%>%
+  select(Relationship, Incident)%>%
+  group_by(Relationship)%>%
+  summarise(total_murder = sum(Incident))
+tm <- treemap(relations, index = 'Relationship',
+              vSize = "total_murder", vColor = "total_murder", type = 'value', palette = rev(viridis(6)))
+highchart() %>% 
+  hc_add_series_treemap(tm, allowDrillToNode = TRUE,
+                        layoutAlgorithm = "squarified")
+```
+
+States And Cities
+=======================================================================
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+
+### Filters {.no-title .colored }
+
+**Select Year and City**
+```{r}
+murder <- df %>%
+  select(City, Year, Incident) %>%
+  group_by(City, Year) %>%
+  summarise(total_murder = sum(Incident)) 
+shareddata <- SharedData$new(murder, group = 'killer')
+filter_slider("Year", "Year", shareddata, ~Year, step = 1)
+filter_select("City", "City", shareddata, ~City, allLevels = TRUE, multiple = TRUE)
+```
+
+```{r}
+datatable(shareddata,
+          rownames = FALSE,
+          colnames = c('City', 'Year', 'Murder'),
+          class = 'cell-border stripe',
+          extensions = "Scroller",
+          options=list(deferRender = FALSE, 
+                       scrollY = 200, 
+                       scrollCollapse = TRUE,
+                       scroller = TRUE,
+                       dom = 't'))
+```
+
+### Murder Cases by City {.no-title .colored }
+
+```{r}
+plot_ly(shareddata, x = ~Year, y = ~total_murder, 
+        color = ~City, colors = sample(colours(), 120),
+        type = 'scatter', mode = 'lines',
+        hoverinfo = 'text', text = ~paste("City: ", City, '<br>Year: ', Year, "<br>Murder: ", total_murder))%>%
+        layout(showlegend = FALSE,
+         title = "Murder by City",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Murder Count")) %>%
+  add_markers() %>% 
+  highlight("plotly_click")
+```
+
+Column {data-width=250}
+-----------------------------------------------------------------------
+### Statewise Murder Rate
+
+```{r}
+murder <- df %>%
+  select(State, Incident) %>%
+  group_by(State) %>%
+  summarise(total_murder = sum(Incident))
+highchart() %>%
+  hc_add_series_map(usgeojson, murder, value = "total_murder", joinBy = c('woename','State'))  %>% 
+  hc_colorAxis(stops = color_stops()) %>% 
+  hc_title(text = "Murder by states") %>% 
+  hc_subtitle(text = "1980-2014") %>%
+  hc_tooltip(borderWidth = 1.5, headerFormat = "", valueSuffix = " murder")
+```
